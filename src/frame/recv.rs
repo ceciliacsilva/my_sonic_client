@@ -124,6 +124,7 @@ impl Recv {
         }
     }
 
+    /// Check if it is possible to read a line.
     pub(crate) fn check(src: &mut Cursor<&[u8]>) -> Result<(), Error> {
         match get_line(src) {
             Ok(_) => Ok(()),
@@ -133,6 +134,8 @@ impl Recv {
     }
 }
 
+/// Try to get a line ('\r\n') from the Cursor.
+/// If it isn't possible, `return` frame `Incomplete`.
 fn get_line<'a>(src: &mut Cursor<&'a [u8]>) -> Result<&'a [u8], Error> {
     let start = src.position() as usize;
     let end = src.get_ref().len() as usize;
@@ -146,4 +149,60 @@ fn get_line<'a>(src: &mut Cursor<&'a [u8]>) -> Result<&'a [u8], Error> {
     }
 
     Err(Error::Incomplete)
+}
+
+mod test {
+    use super::*;
+
+    #[test]
+    fn frame_parse() {
+        let mut line: Cursor<&[u8]> = Cursor::new(b"CONNECTED <sonic-server v1.0.0>\r\n");
+
+        assert_eq!(
+            Recv::Connected("1.0.0".to_string()),
+            Recv::parse(&mut line).expect("Failed to parse; `CONNECTED`")
+        );
+
+        let mut line: Cursor<&[u8]> = Cursor::new(b"STARTED search protocol(1) buffer(20000)\r\n");
+
+        assert_eq!(
+            Recv::Started(Some(Mode::Search), 20000),
+            Recv::parse(&mut line).expect("Failed to parse; `STARTED`")
+        );
+
+        let mut line: Cursor<&[u8]> = Cursor::new(b"PENDING Bt2m2gYa\r\n");
+
+        assert_eq!(
+            Recv::Pending("Bt2m2gYa".into()),
+            Recv::parse(&mut line).expect("Failed to parse; `PENDING`")
+        );
+
+        let mut line: Cursor<&[u8]> = Cursor::new(b"ENDED quit\r\n");
+
+        assert_eq!(
+            Recv::Ended("quit".into()),
+            Recv::parse(&mut line).expect("Failed to parse; `ENDED`")
+        );
+
+        let mut line: Cursor<&[u8]> =
+            Cursor::new(b"EVENT QUERY Bt2m2gYa conversation:71f3d63b conversation:6501e83a\r\n");
+
+        assert_eq!(
+            Recv::EventQuery(
+                "Bt2m2gYa".into(),
+                vec![
+                    "conversation:71f3d63b".into(),
+                    "conversation:6501e83a".into()
+                ]
+            ),
+            Recv::parse(&mut line).expect("Failed to parse; `EVENT QUEUE`")
+        );
+
+        let mut line: Cursor<&[u8]> = Cursor::new(b"EVENT SUGGEST z98uDE0f valerian valala\r\n");
+
+        assert_eq!(
+            Recv::EventSuggest("z98uDE0f".into(), vec!["valerian".into(), "valala".into()]),
+            Recv::parse(&mut line).expect("Failed to parse; `EVENT SUGGEST`")
+        );
+    }
 }

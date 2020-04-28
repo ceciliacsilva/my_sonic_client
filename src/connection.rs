@@ -1,5 +1,6 @@
 use crate::frame::recv::Recv;
 use crate::frame::send::Send;
+use crate::Error;
 use bytes::{Buf, BytesMut};
 use std::io::{self, Cursor};
 use tokio::io::BufWriter;
@@ -24,38 +25,38 @@ impl Connection {
         }
     }
 
+    /// Write a `Send` Frame into the `self.stream`.
     async fn write_frame(&mut self, frame: Send) -> io::Result<()> {
         self.write_string(frame.to_string()).await
     }
 
+    /// Write a `String` into the `self.stream`.
     pub(crate) async fn write_string(&mut self, frame: String) -> io::Result<()> {
         self.stream.write_all(&frame.into_bytes()).await?;
 
         self.stream.flush().await
     }
 
-    pub(crate) async fn read_frame(&mut self) -> Option<Recv> {
+    /// Read `self.buffer` into a `Recv` Frame.
+    pub(crate) async fn read_frame(&mut self) -> Result<Recv, Error> {
         loop {
             let mut buf = Cursor::new(&self.buffer[..]);
 
             match Recv::check(&mut buf) {
                 Ok(_) => {
-                    // debug flag
-                    println!("READ: ");
+                    // TODO Some kind of debug mode.
 
                     let len = buf.position() as usize;
 
-                    // before parsing
+                    // Set position to Zero before parsing.
                     buf.set_position(0);
-
-                    let frame = Recv::parse(&mut buf).expect("mal");
-
+                    let frame = Recv::parse(&mut buf)?;
                     self.buffer.advance(len);
 
-                    return Some(frame);
+                    return Ok(frame);
                 }
                 Err(crate::frame::Error::Incomplete) => {}
-                Err(_e) => return None,
+                Err(e) => return Err(e.into()),
             }
 
             if 0 == self
@@ -64,14 +65,15 @@ impl Connection {
                 .await
                 .expect("Failed trying to read_buf")
             {
+                // Mini-redis:
                 // The remote closed the connection. For this to be a clean
                 // shutdown, there should be no data in the read buffer. If
                 // there is, this means that the peer closed the socket while
                 // sending a frame.
                 if self.buffer.is_empty() {
-                    return Some(Recv::Ended("Remote".to_string()));
+                    return Ok(Recv::Ended("Remote".to_string()));
                 } else {
-                    return None;
+                    return Err("connection reset by peer".into());
                 }
             }
         }
@@ -80,13 +82,21 @@ impl Connection {
 
 mod test {
     use super::*;
+
+    use crate::frame::send::{Push, Query};
+    use crate::frame::Mode;
+
     #[tokio::test]
-    async fn test_ingest_mode() {
+    async fn ingest_mode() {
         let socket = TcpStream::connect("[::1]:1491")
             .await
             .expect("Failed to create TcpStream connection.");
 
         let mut connection = Connection::new(socket);
+
+        if let Ok(Recv::Connected(version)) = connection.read_frame().await {
+            assert_eq!("1.2.3".to_string(), version);
+        }
 
         connection
             .write_frame(Send::Start(
@@ -96,47 +106,40 @@ mod test {
             .await
             .expect("Failed to send `START ingest`");
 
-        if let Some(res) = connection.read_frame().await {
-            assert_eq!(Recv::Connected("1.2.3".to_string()), res);
-        }
-        if let Some(res) = connection.read_frame().await {
-            assert_eq!(Recv::Started(Some(crate::frame::Mode::Ingest), 20000), res);
+        if let Ok(Recv::Started(mode, _size)) = connection.read_frame().await {
+            assert_eq!(Some(Mode::Ingest), mode);
         }
 
         connection
-            .write_string(
-                "PUSH messages user:0dcde3a6 conversation:71f3d63c \"Hello, how are you today?\"\r\n"
-                    .to_string(),
-            )
+            .write_frame(Send::Push(Push::new(
+                "messages".into(),
+                "user:0dcde3a6".into(),
+                "conversation:71f3d63c".into(),
+                "Hello, how are you today?".into(),
+            )))
             .await
             .expect("Failed to send `PUSH messages`");
 
-        println!("{:?}", connection.read_frame().await);
-        // if let Some(res) = connection.read_frame().await {
-        //     // assert_eq!(Recv::Pending(_), res);
-        //     println!("{:?}", res);
-        // }
+        if let Ok(Recv::Ok) = connection.read_frame().await {}
 
         connection
             .write_frame(Send::Quit)
             .await
             .expect("Failed to send `QUIT messages`");
 
-        if let Some(res) = connection.read_frame().await {
-            assert_eq!(Recv::Ended("quit".to_string()), res);
-        }
+        if let Ok(Recv::Ended(_host)) = connection.read_frame().await {}
     }
 
     #[tokio::test]
-    async fn test_search_mode() {
+    async fn search_mode() {
         let socket = TcpStream::connect("[::1]:1491")
             .await
             .expect("Failed to create TcpStream connection.");
 
         let mut connection = Connection::new(socket);
 
-        if let Some(res) = connection.read_frame().await {
-            assert_eq!(Recv::Connected("1.2.3".to_string()), res);
+        if let Ok(Recv::Connected(version)) = connection.read_frame().await {
+            assert_eq!("1.2.3".to_string(), version);
         }
 
         connection
@@ -147,33 +150,29 @@ mod test {
             .await
             .expect("Failed to send `START ingest`");
 
-        if let Some(res) = connection.read_frame().await {
-            assert_eq!(Recv::Started(Some(crate::frame::Mode::Search), 20000), res);
+        if let Ok(Recv::Started(mode, _size)) = connection.read_frame().await {
+            assert_eq!(Some(Mode::Search), mode);
         }
 
-        let query = crate::frame::send::Query::new(
+        let query = Query::new(
             "messages".to_string(),
             "user:0dcde3a6".to_string(),
             "valerian saliou".to_string(),
-            None,
-            None,
         );
         connection
             .write_frame(Send::Query(query))
             .await
             .expect("Failed to send `QUERY messages`");
 
-        if let Some(Recv::Pending(_id)) = connection.read_frame().await {}
+        if let Ok(Recv::Pending(_id)) = connection.read_frame().await {}
 
-        if let Some(Recv::EventQuery(_id, _keys)) = connection.read_frame().await {}
+        if let Ok(Recv::EventQuery(_id, _keys)) = connection.read_frame().await {}
 
         connection
             .write_frame(Send::Quit)
             .await
             .expect("Failed to send `QUIT messages`");
 
-        if let Some(res) = connection.read_frame().await {
-            assert_eq!(Recv::Ended("quit".to_string()), res);
-        }
+        if let Ok(Recv::Ended(_host)) = connection.read_frame().await {}
     }
 }
