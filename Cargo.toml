@@ -9,5 +9,7 @@ edition = "2018"
 [dependencies]
 tokio = { version = "0.2", features = ["full"]}
 futures = "0.3"
-failure = "0.1"
 bytes = "0.5.4"
+regex = "1"
+lazy_static = "1.4"
+atoi = "0.3.2"

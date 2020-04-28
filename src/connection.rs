@@ -1,3 +1,4 @@
+use crate::frame::RecvFrame;
 use bytes::{Buf, BytesMut};
 use std::io::{self, Cursor};
 use tokio::io::BufWriter;
@@ -28,30 +29,11 @@ impl Connection {
         self.stream.flush().await
     }
 
-    pub(crate) async fn read_frame(&mut self) -> Option<&[u8]> {
+    pub(crate) async fn read_frame(&mut self) -> Option<RecvFrame> {
         loop {
             let mut buf = Cursor::new(&self.buffer[..]);
 
-            // match crate::frame::get_line(&mut buf) {
-            //     Ok(line) => {
-            //         println!("READ: ");
-
-            //         let len = buf.position() as usize;
-
-            //         // before parsing
-            //         buf.set_position(0);
-
-            //         parse(&mut buf);
-
-            //         self.buffer.advance(len);
-
-            //         return Some(line);
-            //     }
-            //     Err(Incomplete) => {}
-            //     Err(e) => return None,
-            // }
-
-            match crate::frame::check(&mut buf) {
+            match RecvFrame::check(&mut buf) {
                 Ok(_) => {
                     println!("READ: ");
 
@@ -60,11 +42,11 @@ impl Connection {
                     // before parsing
                     buf.set_position(0);
 
-                    parse(&mut buf);
+                    let frame = RecvFrame::parse(&mut buf).expect("mal");
 
                     self.buffer.advance(len);
 
-                    return Some("STARTED search protocol(1) buffer(20000)".as_bytes());
+                    return Some(frame);
                 }
                 Err(Incomplete) => {}
                 Err(e) => return None,
@@ -81,7 +63,7 @@ impl Connection {
                 // there is, this means that the peer closed the socket while
                 // sending a frame.
                 if self.buffer.is_empty() {
-                    return Some(&[0]);
+                    return Some(RecvFrame::Ended);
                 } else {
                     return None;
                 }
@@ -89,8 +71,6 @@ impl Connection {
         }
     }
 }
-
-fn parse(src: &mut Cursor<&[u8]>) {}
 
 mod test {
     use super::*;
@@ -107,7 +87,13 @@ mod test {
             .await;
 
         if let Some(res) = connection.read_frame().await {
-            assert_eq!("STARTED search protocol(1) buffer(20000)".as_bytes(), res);
+            assert_eq!(RecvFrame::Connected("1.2.3".to_string()), res);
+        }
+        if let Some(res) = connection.read_frame().await {
+            assert_eq!(
+                RecvFrame::Started(Some(crate::frame::Mode::Search), 20000),
+                res
+            );
         }
     }
 }
