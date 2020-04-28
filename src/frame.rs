@@ -12,10 +12,11 @@ pub(crate) enum RecvFrame {
     // read buffer(_) parameter
     Started(Option<Mode>, u64),
     Pending(String),
+    Ok,
     Pong,
     EventQuery(String, Vec<String>),
     EventSuggest(String, Vec<String>),
-    Ended,
+    Ended(String),
 }
 
 #[derive(Debug, PartialEq)]
@@ -121,7 +122,13 @@ impl RecvFrame {
 
                             return Err("invalid frame; `EVENT` final".into());
                         }
-                        _ => return Err("error protocol; invalid command".into()),
+                        "OK" => return Ok(RecvFrame::Ok),
+
+                        "ENDED" => {
+                            let quit = words.next().ok_or("invalid frame; `ENDED`")?;
+                            return Ok(RecvFrame::Ended(quit.to_string()));
+                        }
+                        _ => return Ok(RecvFrame::Pending(word.to_string())), // _ => return Err("error protocol; invalid command".into()),
                     }
                 } else {
                     return Err("error protocol; invalid frame".into());
@@ -134,7 +141,8 @@ impl RecvFrame {
     pub(crate) fn check(src: &mut Cursor<&[u8]>) -> Result<(), Error> {
         match get_line(src) {
             Ok(_) => Ok(()),
-            Err(e) => Err(e),
+            Err(Error::Incomplete) => Err(Error::Incomplete),
+            _ => Err("invalid protocol".into()),
         }
     }
 }

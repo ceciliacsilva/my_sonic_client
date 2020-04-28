@@ -35,6 +35,7 @@ impl Connection {
 
             match RecvFrame::check(&mut buf) {
                 Ok(_) => {
+                    // debug flag
                     println!("READ: ");
 
                     let len = buf.position() as usize;
@@ -48,8 +49,8 @@ impl Connection {
 
                     return Some(frame);
                 }
-                Err(Incomplete) => {}
-                Err(e) => return None,
+                Err(crate::frame::Error::Incomplete) => {}
+                Err(_e) => return None,
             }
 
             if 0 == self
@@ -63,7 +64,7 @@ impl Connection {
                 // there is, this means that the peer closed the socket while
                 // sending a frame.
                 if self.buffer.is_empty() {
-                    return Some(RecvFrame::Ended);
+                    return Some(RecvFrame::Ended("Remote".to_string()));
                 } else {
                     return None;
                 }
@@ -75,7 +76,7 @@ impl Connection {
 mod test {
     use super::*;
     #[tokio::test]
-    async fn test_connection() {
+    async fn test_ingest_mode() {
         let socket = TcpStream::connect("[::1]:1491")
             .await
             .expect("Failed to create TcpStream connection.");
@@ -83,17 +84,79 @@ mod test {
         let mut connection = Connection::new(socket);
 
         connection
-            .write_string("START search SecretPassword".to_string())
-            .await;
+            .write_string("START ingest SecretPassword\r\n".to_string())
+            .await
+            .expect("Failed to send `START ingest`");
 
         if let Some(res) = connection.read_frame().await {
             assert_eq!(RecvFrame::Connected("1.2.3".to_string()), res);
         }
         if let Some(res) = connection.read_frame().await {
             assert_eq!(
+                RecvFrame::Started(Some(crate::frame::Mode::Ingest), 20000),
+                res
+            );
+        }
+
+        connection
+            .write_string(
+                "PUSH messages user:0dcde3a6 conversation:71f3d63c \"Hello, how are you today?\"\r\n"
+                    .to_string(),
+            )
+            .await
+            .expect("Failed to send `PUSH messages`");
+
+        println!("{:?}", connection.read_frame().await);
+        // if let Some(res) = connection.read_frame().await {
+        //     // assert_eq!(RecvFrame::Pending(_), res);
+        //     println!("{:?}", res);
+        // }
+
+        connection
+            .write_string("QUIT\r\n".to_string())
+            .await
+            .expect("Failed to send `QUIT messages`");
+
+        if let Some(res) = connection.read_frame().await {
+            assert_eq!(RecvFrame::Ended("quit".to_string()), res);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_search_mode() {
+        let socket = TcpStream::connect("[::1]:1491")
+            .await
+            .expect("Failed to create TcpStream connection.");
+
+        let mut connection = Connection::new(socket);
+
+        if let Some(res) = connection.read_frame().await {
+            assert_eq!(RecvFrame::Connected("1.2.3".to_string()), res);
+        }
+
+        connection
+            .write_string("START search SecretPassword\r\n".to_string())
+            .await
+            .expect("Failed to send `START search`");
+
+        // // println!("{:?}", connection.read_frame().await);
+
+        connection
+            .write_string("QUIT\r\n".to_string())
+            .await
+            .expect("Failed to send `QUIT messages`");
+
+        if let Some(res) = connection.read_frame().await {
+            assert_eq!(
                 RecvFrame::Started(Some(crate::frame::Mode::Search), 20000),
                 res
             );
+        }
+
+        // println!("{:?}", connection.read_frame().await);
+        if let Some(res) = connection.read_frame().await {
+            assert_eq!(RecvFrame::Ended("Remote".to_string()), res);
+            // println!("{:?}", res);
         }
     }
 }
