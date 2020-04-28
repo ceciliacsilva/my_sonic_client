@@ -1,7 +1,7 @@
 use crate::frame::Mode;
 
 #[derive(Debug, PartialEq)]
-pub(crate) enum Send {
+pub enum Send {
     Start(Mode, String),
     Query(Query),
     Push(Push),

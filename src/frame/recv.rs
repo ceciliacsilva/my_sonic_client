@@ -5,9 +5,11 @@ use crate::frame::{Error, Mode};
 
 #[allow(dead_code)]
 #[derive(Debug, PartialEq)]
-pub(crate) enum Recv {
+pub enum Recv {
     Connected(String),
-    // read buffer(_) parameter
+    // TODO
+    //      (mode,        buffer_size)
+    // Use buffer_size - admission control.
     Started(Option<Mode>, u64),
     Pending(String),
     Ok,
@@ -109,6 +111,7 @@ impl Recv {
                             return Err("invalid frame; `EVENT` final".into());
                         }
                         "OK" => return Ok(Recv::Ok),
+                        "PONG" => return Ok(Recv::Pong),
 
                         "ENDED" => {
                             let quit = words.next().ok_or("invalid frame; `ENDED`")?;

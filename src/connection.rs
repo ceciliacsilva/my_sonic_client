@@ -9,7 +9,7 @@ use tokio::prelude::*;
 
 /// Send and receive frame.
 #[derive(Debug)]
-pub(crate) struct Connection {
+pub struct Connection {
     stream: BufWriter<TcpStream>,
     // When Tokio v0.3 change to tokio::BytesMut
     buffer: BytesMut,
@@ -26,19 +26,19 @@ impl Connection {
     }
 
     /// Write a `Send` Frame into the `self.stream`.
-    async fn write_frame(&mut self, frame: Send) -> io::Result<()> {
+    pub async fn write_frame(&mut self, frame: Send) -> io::Result<()> {
         self.write_string(frame.to_string()).await
     }
 
     /// Write a `String` into the `self.stream`.
-    pub(crate) async fn write_string(&mut self, frame: String) -> io::Result<()> {
+    pub async fn write_string(&mut self, frame: String) -> io::Result<()> {
         self.stream.write_all(&frame.into_bytes()).await?;
 
         self.stream.flush().await
     }
 
     /// Read `self.buffer` into a `Recv` Frame.
-    pub(crate) async fn read_frame(&mut self) -> Result<Recv, Error> {
+    pub async fn read_frame(&mut self) -> Result<Recv, Error> {
         loop {
             let mut buf = Cursor::new(&self.buffer[..]);
 

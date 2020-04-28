@@ -6,7 +6,7 @@ pub mod recv;
 pub mod send;
 
 #[derive(Debug, PartialEq)]
-pub(crate) enum Mode {
+pub enum Mode {
     Search,
     Ingest,
 }
