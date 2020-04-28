@@ -1,6 +1,5 @@
 use my_sonic_client::connection::Connection;
 use my_sonic_client::frame::recv::Recv;
-use my_sonic_client::frame::send::Push;
 use my_sonic_client::frame::send::Send;
 use my_sonic_client::frame::Mode;
 use std::env;
@@ -33,18 +32,15 @@ async fn main() {
         println!("Mode: {:?}, buffer_size: {}", mode, size);
     }
 
-    connection
-        .write_frame(Send::Push(Push::new(
-            "messages".into(),
-            "user:0dcde3a6".into(),
-            "conversation:71f3d63c".into(),
-            "Hello, how are you today?".into(),
-        )))
-        .await
-        .expect("Failed to send `PUSH messages`");
+    println!("Ping");
 
-    if let Ok(Recv::Ok) = connection.read_frame().await {
-        println!("Push Ok");
+    connection
+        .write_frame(Send::Ping)
+        .await
+        .expect("Failed to send `PING messages`");
+
+    if let Ok(Recv::Pong) = connection.read_frame().await {
+        println!("Pong");
     }
 
     connection

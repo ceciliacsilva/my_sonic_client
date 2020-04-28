@@ -99,10 +99,7 @@ mod test {
         }
 
         connection
-            .write_frame(Send::Start(
-                crate::frame::Mode::Ingest,
-                "SecretPassword".to_string(),
-            ))
+            .write_frame(Send::Start(Mode::Ingest, "SecretPassword".to_string()))
             .await
             .expect("Failed to send `START ingest`");
 
@@ -143,10 +140,7 @@ mod test {
         }
 
         connection
-            .write_frame(Send::Start(
-                crate::frame::Mode::Search,
-                "SecretPassword".to_string(),
-            ))
+            .write_frame(Send::Start(Mode::Search, "SecretPassword".to_string()))
             .await
             .expect("Failed to send `START ingest`");
 

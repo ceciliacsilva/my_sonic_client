@@ -3,11 +3,18 @@ use my_sonic_client::frame::recv::Recv;
 use my_sonic_client::frame::send::Query;
 use my_sonic_client::frame::send::Send;
 use my_sonic_client::frame::Mode;
+use std::env;
 use tokio::net::TcpStream;
 
 #[tokio::main]
 async fn main() {
-    let socket = TcpStream::connect("[::1]:1491")
+    dotenv::dotenv().expect("Failed to read .env file.");
+
+    let host = env::var("HOST").expect("Environment var `HOST` not found");
+    let port = env::var("PORT").expect("Environment var `PORT` not found");
+    let passwd = env::var("PASSWORD").expect("Environment var `PASSWORD` not found");
+
+    let socket = TcpStream::connect(format!("[{}]:{}", host, port))
         .await
         .expect("Failed to create TcpStream connection.");
 
@@ -18,7 +25,7 @@ async fn main() {
     }
 
     connection
-        .write_frame(Send::Start(Mode::Search, "SecretPassword".to_string()))
+        .write_frame(Send::Start(Mode::Search, passwd))
         .await
         .expect("Failed to send `START ingest`");
 
