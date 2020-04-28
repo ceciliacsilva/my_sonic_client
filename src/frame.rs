@@ -25,6 +25,15 @@ pub(crate) enum Mode {
     Ingest,
 }
 
+impl ToString for Mode {
+    fn to_string(&self) -> String {
+        match self {
+            Mode::Ingest => "ingest".to_string(),
+            Mode::Search => "search".to_string(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(crate) enum Error {
     Incomplete,

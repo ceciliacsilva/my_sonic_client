@@ -3,6 +3,7 @@ extern crate lazy_static;
 
 mod connection;
 mod frame;
+mod frame_send;
 // pub mod control;
 // mod task;
 

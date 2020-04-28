@@ -1,4 +1,5 @@
 use crate::frame::RecvFrame;
+use crate::frame_send::FrameSend;
 use bytes::{Buf, BytesMut};
 use std::io::{self, Cursor};
 use tokio::io::BufWriter;
@@ -21,6 +22,10 @@ impl Connection {
             // For now 4KB is the default, this may change based on the use cases.
             buffer: BytesMut::with_capacity(4 * 1024),
         }
+    }
+
+    async fn write_frame(&mut self, frame: FrameSend) -> io::Result<()> {
+        self.write_string(frame.to_string()).await
     }
 
     pub(crate) async fn write_string(&mut self, frame: String) -> io::Result<()> {
@@ -84,7 +89,10 @@ mod test {
         let mut connection = Connection::new(socket);
 
         connection
-            .write_string("START ingest SecretPassword\r\n".to_string())
+            .write_frame(FrameSend::Start(
+                crate::frame::Mode::Ingest,
+                "SecretPassword".to_string(),
+            ))
             .await
             .expect("Failed to send `START ingest`");
 
@@ -113,7 +121,7 @@ mod test {
         // }
 
         connection
-            .write_string("QUIT\r\n".to_string())
+            .write_frame(FrameSend::Quit)
             .await
             .expect("Failed to send `QUIT messages`");
 
@@ -135,16 +143,12 @@ mod test {
         }
 
         connection
-            .write_string("START search SecretPassword\r\n".to_string())
+            .write_frame(FrameSend::Start(
+                crate::frame::Mode::Search,
+                "SecretPassword".to_string(),
+            ))
             .await
-            .expect("Failed to send `START search`");
-
-        // // println!("{:?}", connection.read_frame().await);
-
-        connection
-            .write_string("QUIT\r\n".to_string())
-            .await
-            .expect("Failed to send `QUIT messages`");
+            .expect("Failed to send `START ingest`");
 
         if let Some(res) = connection.read_frame().await {
             assert_eq!(
@@ -153,10 +157,29 @@ mod test {
             );
         }
 
-        // println!("{:?}", connection.read_frame().await);
+        let query = crate::frame_send::Query::new(
+            "messages".to_string(),
+            "user:0dcde3a6".to_string(),
+            "valerian saliou".to_string(),
+            None,
+            None,
+        );
+        connection
+            .write_frame(FrameSend::Query(query))
+            .await
+            .expect("Failed to send `QUERY messages`");
+
+        if let Some(RecvFrame::Pending(_id)) = connection.read_frame().await {}
+
+        if let Some(RecvFrame::EventQuery(_id, _keys)) = connection.read_frame().await {}
+
+        connection
+            .write_frame(FrameSend::Quit)
+            .await
+            .expect("Failed to send `QUIT messages`");
+
         if let Some(res) = connection.read_frame().await {
-            assert_eq!(RecvFrame::Ended("Remote".to_string()), res);
-            // println!("{:?}", res);
+            assert_eq!(RecvFrame::Ended("quit".to_string()), res);
         }
     }
 }
