@@ -1,13 +1,11 @@
-// use failure::Error;
 use regex::Regex;
-use std::fmt;
 use std::io::Cursor;
-use std::num::ParseIntError;
-use std::string::FromUtf8Error;
+
+use crate::frame::{Error, Mode};
 
 #[allow(dead_code)]
 #[derive(Debug, PartialEq)]
-pub(crate) enum RecvFrame {
+pub(crate) enum Recv {
     Connected(String),
     // read buffer(_) parameter
     Started(Option<Mode>, u64),
@@ -19,29 +17,8 @@ pub(crate) enum RecvFrame {
     Ended(String),
 }
 
-#[derive(Debug, PartialEq)]
-pub(crate) enum Mode {
-    Search,
-    Ingest,
-}
-
-impl ToString for Mode {
-    fn to_string(&self) -> String {
-        match self {
-            Mode::Ingest => "ingest".to_string(),
-            Mode::Search => "search".to_string(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub(crate) enum Error {
-    Incomplete,
-    Other(crate::Error),
-}
-
-impl RecvFrame {
-    pub(crate) fn parse(src: &mut Cursor<&[u8]>) -> Result<RecvFrame, Error> {
+impl Recv {
+    pub(crate) fn parse(src: &mut Cursor<&[u8]>) -> Result<Self, Error> {
         match get_line(src) {
             Ok(line) => {
                 let line = String::from_utf8(line.to_vec())?;
@@ -66,7 +43,7 @@ impl RecvFrame {
                             if RE_CONNECTED.is_match(version) {
                                 let version: Vec<&str> =
                                     version.split(|c| c == 'v' || c == '>').collect();
-                                return Ok(RecvFrame::Connected(version[1].to_string()));
+                                return Ok(Recv::Connected(version[1].to_string()));
                             }
 
                             return Err("invalid frame; `CONNECTED`".into());
@@ -97,7 +74,7 @@ impl RecvFrame {
                                 let size = b_size.get(1).ok_or("invalid frame; `STARTED` size")?;
                                 let size = size.parse::<u64>()?;
 
-                                return Ok(RecvFrame::Started(mode, size));
+                                return Ok(Recv::Started(mode, size));
                             }
 
                             return Err(format!(
@@ -109,7 +86,7 @@ impl RecvFrame {
 
                         "PENDING" => {
                             let id = words.next().ok_or("invalid frame; `PENDING`")?;
-                            return Ok(RecvFrame::Pending(id.to_string()));
+                            return Ok(Recv::Pending(id.to_string()));
                         }
                         "EVENT" => {
                             let event_type = words.next().ok_or("invalid frame; `EVENT` type")?;
@@ -118,7 +95,7 @@ impl RecvFrame {
 
                                 let keys = words.map(|word| word.to_string()).collect();
 
-                                return Ok(RecvFrame::EventQuery(id.to_string(), keys));
+                                return Ok(Recv::EventQuery(id.to_string(), keys));
                             }
 
                             if event_type == "SUGGEST" {
@@ -126,18 +103,18 @@ impl RecvFrame {
 
                                 let suggestions = words.map(|word| word.to_string()).collect();
 
-                                return Ok(RecvFrame::EventSuggest(id.to_string(), suggestions));
+                                return Ok(Recv::EventSuggest(id.to_string(), suggestions));
                             }
 
                             return Err("invalid frame; `EVENT` final".into());
                         }
-                        "OK" => return Ok(RecvFrame::Ok),
+                        "OK" => return Ok(Recv::Ok),
 
                         "ENDED" => {
                             let quit = words.next().ok_or("invalid frame; `ENDED`")?;
-                            return Ok(RecvFrame::Ended(quit.to_string()));
+                            return Ok(Recv::Ended(quit.to_string()));
                         }
-                        _ => return Ok(RecvFrame::Pending(word.to_string())), // _ => return Err("error protocol; invalid command".into()),
+                        _ => return Ok(Recv::Pending(word.to_string())), // _ => return Err("error protocol; invalid command".into()),
                     }
                 } else {
                     return Err("error protocol; invalid frame".into());
@@ -169,38 +146,4 @@ fn get_line<'a>(src: &mut Cursor<&'a [u8]>) -> Result<&'a [u8], Error> {
     }
 
     Err(Error::Incomplete)
-}
-
-impl std::error::Error for Error {}
-impl fmt::Display for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::Incomplete => "stream ended early".fmt(fmt),
-            Error::Other(err) => err.fmt(fmt),
-        }
-    }
-}
-
-impl From<FromUtf8Error> for Error {
-    fn from(_src: FromUtf8Error) -> Error {
-        "protocol error; invalid frame format".into()
-    }
-}
-
-impl From<String> for Error {
-    fn from(src: String) -> Error {
-        Error::Other(src.into())
-    }
-}
-
-impl From<&str> for Error {
-    fn from(src: &str) -> Error {
-        src.to_string().into()
-    }
-}
-
-impl From<ParseIntError> for Error {
-    fn from(_src: ParseIntError) -> Error {
-        "protocol error; invalid frame format".into()
-    }
 }

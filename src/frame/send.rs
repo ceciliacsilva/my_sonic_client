@@ -1,8 +1,7 @@
 use crate::frame::Mode;
-use std::io::Cursor;
 
 #[derive(Debug, PartialEq)]
-pub(crate) enum FrameSend {
+pub(crate) enum Send {
     Start(Mode, String),
     Query(Query),
     Push,
@@ -52,12 +51,12 @@ impl ToString for Query {
     }
 }
 
-impl ToString for FrameSend {
+impl ToString for Send {
     fn to_string(&self) -> String {
         match self {
-            FrameSend::Start(mode, passwd) => format!("START {} {}\r\n", mode.to_string(), passwd),
-            FrameSend::Quit => format!("QUIT\r\n"),
-            FrameSend::Query(query) => format!("QUERY {}\r\n", query.to_string()),
+            Send::Start(mode, passwd) => format!("START {} {}\r\n", mode.to_string(), passwd),
+            Send::Quit => format!("QUIT\r\n"),
+            Send::Query(query) => format!("QUERY {}\r\n", query.to_string()),
             _ => "".to_string(),
         }
     }
