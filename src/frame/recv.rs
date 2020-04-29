@@ -17,6 +17,7 @@ pub enum Recv {
     EventQuery(String, Vec<String>),
     EventSuggest(String, Vec<String>),
     Ended(String),
+    Err(String),
 }
 
 impl Recv {
@@ -117,6 +118,14 @@ impl Recv {
                             let quit = words.next().ok_or("invalid frame; `ENDED`")?;
                             return Ok(Recv::Ended(quit.to_string()));
                         }
+                        "ERR" => {
+                            let err_vec: Vec<&str> = words.collect();
+                            let mut err_str = String::from("");
+                            for word in err_vec {
+                                err_str.push_str(&format!(" {}", word));
+                            }
+                            return Ok(Recv::Err(err_str.to_string()));
+                        }
                         _ => return Ok(Recv::Pending(word.to_string())), // _ => return Err("error protocol; invalid command".into()),
                     }
                 } else {
@@ -206,6 +215,16 @@ mod test {
         assert_eq!(
             Recv::EventSuggest("z98uDE0f".into(), vec!["valerian".into(), "valala".into()]),
             Recv::parse(&mut line).expect("Failed to parse; `EVENT SUGGEST`")
+        );
+
+        let mut line: Cursor<&[u8]> =
+            Cursor::new(b"ERR invalid_format(PUSH <collection> <bucket> <object> \"<text>\")\r\n");
+
+        assert_eq!(
+            Recv::Err(
+                " invalid_format(PUSH <collection> <bucket> <object> \"<text>\")".to_string()
+            ),
+            Recv::parse(&mut line).expect("Failed to parse; `ERR`")
         );
     }
 }
